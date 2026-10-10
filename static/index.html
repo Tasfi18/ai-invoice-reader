@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invoice Reader</title>
+<style>
+  :root {
+    --paper: #edf0f5; --ink: #1b1e22; --muted: #5f646b; --accent: #2d4a8a; --accent-soft: #e2e8f5;
+    --line: #e3e7ee; --card: #fff;
+    --pass: #2f7d5b; --pass-soft: #e1f0e8; --fail: #a3261f; --fail-soft: #f9e4e2; --skip: #6b6f73; --skip-soft: #eef0f4;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--paper); color: var(--ink); font: 14.5px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 9px; padding: 8px 14px; font-weight: 600; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 28px; background: var(--card); border-bottom: 1px solid var(--line); }
+  header .brand { margin-right: auto; display: flex; flex-direction: column; }
+  header .brand b { font-size: 17px; letter-spacing: -.01em; }
+  header .brand span { font-size: 12.5px; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(320px, 0.9fr) 1.1fr; gap: 18px; padding: 20px 28px 32px; max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .left { display: flex; flex-direction: column; gap: 14px; }
+  .drop { border: 1.5px dashed #c5cede; border-radius: 12px; padding: 26px; text-align: center; color: var(--muted); cursor: pointer; background: #fafbfd; }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop b { color: var(--accent); }
+  .preview { flex: 1; min-height: 520px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #f6f7f9; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .preview iframe { width: 100%; height: 100%; min-height: 520px; border: 0; background: #fff; }
+  .right { display: flex; flex-direction: column; gap: 14px; }
+  .empty { color: var(--muted); padding: 40px 10px; text-align: center; }
+  .summary { border-radius: 12px; padding: 12px 16px; font-weight: 600; display: flex; gap: 10px; align-items: center; }
+  .summary.ok { background: var(--pass-soft); color: var(--pass); }
+  .summary.bad { background: var(--fail-soft); color: var(--fail); }
+  .summary small { font-weight: 400; margin-left: auto; color: var(--muted); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 10px; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .fields label, .totals label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+  input { border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; background: #fff; }
+  input:focus { outline: none; border-color: var(--accent); }
+  .fields input, .totals input { font-size: 14px; color: var(--ink); }
+  input.num { text-align: right; font-variant-numeric: tabular-nums; }
+  input.bad { border-color: var(--fail); background: var(--fail-soft); color: var(--fail); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11.5px; color: var(--muted); font-weight: 600; text-align: left; padding: 0 6px 6px; }
+  th.r { text-align: right; }
+  td { padding: 3px 4px; }
+  td input { padding: 6px 7px; }
+  td.desc { width: 46%; }
+  .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-top: 12px; }
+  .checks { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .checks li { display: grid; grid-template-columns: 74px 120px 1fr; gap: 10px; align-items: start; font-size: 13.5px; }
+  .tag { border-radius: 12px; padding: 2px 9px; font-size: 12px; font-weight: 700; text-align: center; }
+  .tag.pass { background: var(--pass-soft); color: var(--pass); }
+  .tag.fail { background: var(--fail-soft); color: var(--fail); }
+  .tag.skip { background: var(--skip-soft); color: var(--skip); }
+  .checks b { font-weight: 600; }
+  .actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .error { background: var(--fail-soft); color: var(--fail); border-radius: 10px; padding: 10px 14px; }
+  .busy { color: var(--muted); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } .fields, .totals { grid-template-columns: 1fr 1fr; } .checks li { grid-template-columns: 64px 1fr; } .checks li span:last-child { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>Invoice Reader</b><span>Supplier invoices to checked, structured data</span></div>
+  <div class="actions">
+    <button id="dl-json" disabled>Download JSON</button>
+    <button id="dl-csv" class="primary" disabled>Download CSV</button>
+  </div>
+</header>
+
+<main>
+  <section class="left">
+    <label class="drop" id="drop">
+      <input id="file" type="file" accept="application/pdf" hidden />
+      Drop an invoice PDF here, or <b>browse</b>
+    </label>
+    <div class="preview" id="preview">The invoice will show here.</div>
+  </section>
+
+  <section class="right" id="right">
+    <div class="card empty" id="empty">Upload an invoice to extract its fields. Every number is then checked: line totals, subtotal, tax and grand total.</div>
+  </section>
+</main>
+
+<template id="result-tpl">
+  <div class="summary" id="summary"></div>
+  <div class="card">
+    <h2>Invoice</h2>
+    <div class="fields">
+      <label>Supplier<input data-f="supplier_name" /></label>
+      <label>Supplier tax ID<input data-f="supplier_tax_id" /></label>
+      <label>Invoice number<input data-f="invoice_number" /></label>
+      <label>Customer<input data-f="customer_name" /></label>
+      <label>Invoice date<input data-f="invoice_date" placeholder="YYYY-MM-DD" /></label>
+      <label>Due date<input data-f="due_date" placeholder="YYYY-MM-DD" /></label>
+      <label>Currency<input data-f="currency" /></label>
+      <label>Notes<input data-f="notes" /></label>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Line items</h2>
+    <table>
+      <thead><tr><th>Description</th><th class="r">Qty</th><th class="r">Unit price</th><th class="r">Amount</th></tr></thead>
+      <tbody id="lines"></tbody>
+    </table>
+    <div class="totals">
+      <label>Subtotal<input class="num" data-f="subtotal" /></label>
+      <label>Discount<input class="num" data-f="discount" /></label>
+      <label>Shipping<input class="num" data-f="shipping" /></label>
+      <label>Tax rate %<input class="num" data-f="tax_rate_percent" /></label>
+      <label>Tax amount<input class="num" data-f="tax_amount" /></label>
+      <label>Total<input class="num" data-f="total" /></label>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Checks</h2>
+    <ul class="checks" id="checks"></ul>
+  </div>
+</template>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+let invoice = null;
+let pdfUrl = null;
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+function showError(msg) {
+  $("#right").innerHTML = `<div class="error">${esc(msg)}</div>`;
+}
+
+// Outline any line whose quantity × unit price doesn't match its amount.
+function markLines() {
+  document.querySelectorAll("#lines tr").forEach((tr, i) => {
+    const li = invoice.line_items[i];
+    const [q, u, a] = [li.quantity, li.unit_price, li.amount].map((v) => (v === null || v === "" ? NaN : Number(String(v).replace(/,/g, ""))));
+    const bad = [q, u, a].every(Number.isFinite) && Math.abs(Math.round(q * u * 100) - Math.round(a * 100)) > 1;
+    tr.querySelector('[data-k="amount"]').classList.toggle("bad", bad);
+  });
+}
+
+function renderChecks(checks) {
+  markLines();
+  const fails = checks.filter((c) => c.status === "fail").length;
+  const s = $("#summary");
+  s.className = "summary " + (fails ? "bad" : "ok");
+  s.innerHTML = fails
+    ? `▲ ${fails} ${fails === 1 ? "problem" : "problems"} found. Check against the invoice before posting.`
+    : "✓ All checks passed.";
+  $("#checks").innerHTML = checks
+    .map((c) => `<li><span class="tag ${c.status}">${{ pass: "✓ Pass", fail: "✕ Fail", skip: "– Skip" }[c.status]}</span><b>${esc(c.name)}</b><span>${esc(c.message)}</span></li>`)
+    .join("");
+}
+
+function renderLines() {
+  $("#lines").innerHTML = invoice.line_items
+    .map(
+      (li, i) => `<tr>
+        <td class="desc"><input data-l="${i}" data-k="description" value="${esc(li.description)}" /></td>
+        <td><input class="num" data-l="${i}" data-k="quantity" value="${esc(li.quantity)}" /></td>
+        <td><input class="num" data-l="${i}" data-k="unit_price" value="${esc(li.unit_price)}" /></td>
+        <td><input class="num" data-l="${i}" data-k="amount" value="${esc(li.amount)}" /></td>
+      </tr>`,
+    )
+    .join("");
+}
+
+function render(result, source) {
+  invoice = result.invoice;
+  $("#right").innerHTML = "";
+  $("#right").append($("#result-tpl").content.cloneNode(true));
+  document.querySelectorAll("[data-f]").forEach((el) => (el.value = invoice[el.dataset.f] ?? ""));
+  renderLines();
+  renderChecks(result.checks);
+  if (source === "pdf") $("#summary").insertAdjacentHTML("beforeend", "<small>Read from the scanned pages</small>");
+  $("#dl-csv").disabled = $("#dl-json").disabled = false;
+}
+
+let timer;
+$("#right").addEventListener("input", (e) => {
+  const el = e.target;
+  if (el.dataset.f) invoice[el.dataset.f] = el.value.trim() === "" ? null : el.value.trim();
+  if (el.dataset.l) invoice.line_items[+el.dataset.l][el.dataset.k] = el.value.trim() === "" && el.dataset.k !== "description" ? null : el.value.trim();
+  clearTimeout(timer);
+  timer = setTimeout(async () => {
+    const res = await fetch("/api/check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(invoice) });
+    if (res.ok) renderChecks(await res.json());
+  }, 300);
+});
+
+async function upload(file) {
+  if (!file) return;
+  if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+  pdfUrl = URL.createObjectURL(file);
+  $("#preview").innerHTML = `<iframe src="${pdfUrl}#view=FitH" title="Invoice preview"></iframe>`;
+  $("#right").innerHTML = `<div class="card busy">Reading ${esc(file.name)}…</div>`;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res = await fetch("/api/extract", { method: "POST", body: form });
+    const body = await res.json();
+    if (!res.ok) return showError(body.detail || "Could not read that invoice.");
+    render(body, body.source);
+  } catch {
+    showError("Could not reach the server.");
+  }
+}
+
+$("#file").addEventListener("change", (e) => upload(e.target.files[0]));
+const drop = $("#drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files[0]); });
+
+function download(name, type, text) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+$("#dl-json").addEventListener("click", () => download(`${invoice.invoice_number || "invoice"}.json`, "application/json", JSON.stringify(invoice, null, 2)));
+$("#dl-csv").addEventListener("click", async () => {
+  const res = await fetch("/api/export.csv", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(invoice) });
+  download(`${(invoice.invoice_number || "invoice").replace(/\//g, "-")}.csv`, "text/csv", await res.text());
+});
+</script>
+</body>
+</html>
